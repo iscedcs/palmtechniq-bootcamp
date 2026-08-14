@@ -1,0 +1,473 @@
+// PalmTechnIQ Bootcamp Platform — bootcamp.palmtechniq.com
+//
+// This application shares the main platform's Neon database but owns a
+// dedicated `bootcamp` PostgreSQL schema. Two Prisma applications against the
+// same default schema would fight over `_prisma_migrations`.
+//
+// This datasource declares ONLY the `bootcamp` schema. That is deliberate and
+// load-bearing.
+//
+// The PRD (§5.2/§6) modelled the main platform's `public."User"` here so that
+// `Registration.userId` could be a real foreign key. Doing that means every
+// `prisma migrate` emits `CREATE TABLE "User"`, `CREATE TYPE "UserRole"` and a
+// cross-schema FK, which then have to be hand-stripped from the SQL — every
+// time, forever, correctly. One missed strip runs DDL against the live main
+// platform.
+//
+// Listing only `bootcamp` makes that class of accident impossible rather than
+// merely forbidden: Prisma cannot emit a statement for a schema it does not
+// know about. `userId` remains a plain nullable column resolved by email
+// (PRD §1.2), and admin auth reads `public."User"` through a raw query in
+// lib/auth.ts — reads need no migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 removed `url` from the datasource block. Connection strings for the
+// CLI live in prisma.config.ts; the runtime client connects through the Neon
+// driver adapter in lib/db.ts. multiSchema is GA and no longer a preview flag.
+datasource db {
+  provider = "postgresql"
+  schemas  = ["bootcamp"]
+}
+
+// ---------------------------------------------------------------------------
+// Programme layer
+// ---------------------------------------------------------------------------
+
+model Bootcamp {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  tagline     String?
+  description String?  @db.Text
+  coverImage  String?
+  isActive    Boolean  @default(true)
+  cohorts     Cohort[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@schema("bootcamp")
+}
+
+enum CohortMode {
+  ONLINE
+  PHYSICAL
+  HYBRID
+
+  @@schema("bootcamp")
+}
+
+enum CohortStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  RUNNING
+  COMPLETED
+  ARCHIVED
+
+  @@schema("bootcamp")
+}
+
+model Cohort {
+  id               String       @id @default(uuid())
+  bootcampId       String
+  bootcamp         Bootcamp     @relation(fields: [bootcampId], references: [id])
+  slug             String
+  name             String
+  mode             CohortMode   @default(PHYSICAL)
+  venueName        String?
+  venueAddress     String?      @db.Text
+  virtualLink      String?
+  venueCapacity    Int?
+  orientationAt    DateTime?
+  startsOn         DateTime     @db.Date
+  endsOn           DateTime     @db.Date
+  goNoGoOn         DateTime?    @db.Date
+  totalSessions    Int
+  minAttendance    Int
+  whatsappGroupUrl String?
+  status           CohortStatus @default(DRAFT)
+
+  tracks        Track[]
+  priceTiers    PriceTier[]
+  registrations Registration[]
+  sessions      Session[]
+  waitlist      WaitlistEntry[]
+  media         CohortMedia[]
+  testimonials  Testimonial[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bootcampId, slug])
+  @@index([status])
+  @@schema("bootcamp")
+}
+
+model Facilitator {
+  id           String  @id @default(uuid())
+  name         String
+  bio          String? @db.Text
+  photoUrl     String?
+  showPublicly Boolean @default(false)
+  tracks       Track[]
+
+  @@schema("bootcamp")
+}
+
+enum TrackStatus {
+  PROPOSED
+  CONFIRMED
+  RUNNING
+  CANCELLED
+  NEXT_COHORT
+  COMPLETED
+
+  @@schema("bootcamp")
+}
+
+model Track {
+  id            String       @id @default(uuid())
+  cohortId      String
+  cohort        Cohort       @relation(fields: [cohortId], references: [id])
+  slug          String
+  name          String
+  summary       String?      @db.Text
+  outcomes      String[]
+  facilitatorId String?
+  facilitator   Facilitator? @relation(fields: [facilitatorId], references: [id])
+  capacity      Int          @default(10)
+  minEnrollment Int          @default(4)
+  slotStart     String?
+  slotEnd       String?
+  status        TrackStatus  @default(PROPOSED)
+  displayOrder  Int          @default(0)
+
+  registrations Registration[]
+  sessions      Session[]
+  priceTiers    PriceTier[]
+  waitlist      WaitlistEntry[]
+
+  @@unique([cohortId, slug])
+  @@index([cohortId, status])
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Pricing
+// ---------------------------------------------------------------------------
+
+/// `trackId` null means the tier applies to every track in the cohort.
+/// `maxSeats` null means unlimited.
+model PriceTier {
+  id           String    @id @default(uuid())
+  cohortId     String
+  cohort       Cohort    @relation(fields: [cohortId], references: [id])
+  trackId      String?
+  track        Track?    @relation(fields: [trackId], references: [id])
+  name         String
+  amountKobo   Int
+  startsAt     DateTime?
+  endsAt       DateTime?
+  maxSeats     Int?
+  isActive     Boolean   @default(true)
+  displayOrder Int       @default(0)
+
+  registrations Registration[]
+
+  @@index([cohortId, isActive])
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+enum RegistrationStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+  TRANSFERRED
+
+  @@schema("bootcamp")
+}
+
+enum AttendMode {
+  PHYSICAL
+  ONLINE
+
+  @@schema("bootcamp")
+}
+
+enum ExperienceLevel {
+  NONE
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+
+  @@schema("bootcamp")
+}
+
+/// `referenceCode` format: PTQ-B26-XXXX, XXXX drawn from an unambiguous
+/// alphabet (no O/0/I/1) because these get read aloud over the phone.
+/// See lib/reference-code.ts.
+model Registration {
+  id            String     @id @default(uuid())
+  referenceCode String     @unique
+  cohortId      String
+  cohort        Cohort     @relation(fields: [cohortId], references: [id])
+  trackId       String
+  track         Track      @relation(fields: [trackId], references: [id])
+  priceTierId   String?
+  priceTier     PriceTier? @relation(fields: [priceTierId], references: [id])
+
+  /// Optional link to a palmtechniq.com account. Intentionally NOT a database
+  /// foreign key: an FK from `bootcamp` into `public` would let this app block
+  /// migrations on the main platform, which is the opposite of the independent
+  /// failure domain this split exists to create. Registrants are resolved to
+  /// platform users by email today (PRD §1.2).
+  userId String?
+
+  fullName      String
+  email         String
+  phone         String
+  dateOfBirth   DateTime?       @db.Date
+  guardianName  String?
+  guardianPhone String?
+  experience    ExperienceLevel @default(NONE)
+  motivation    String?         @db.Text
+  heardFrom     String?
+
+  attendMode    AttendMode         @default(PHYSICAL)
+  status        RegistrationStatus @default(PENDING)
+  holdExpiresAt DateTime?
+
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+
+  payments    Payment[]
+  attendance  Attendance[]
+  certificate Certificate?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cohortId, status])
+  @@index([trackId, status])
+  @@index([email])
+  @@index([status, holdExpiresAt])
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Payments — money is integer kobo. No floating point in this path, ever.
+// ---------------------------------------------------------------------------
+
+enum PaymentProvider {
+  PAYSTACK
+  OFFLINE
+  COMP
+
+  @@schema("bootcamp")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  ABANDONED
+  REFUNDED
+
+  @@schema("bootcamp")
+}
+
+model Payment {
+  id             String          @id @default(uuid())
+  registrationId String
+  registration   Registration    @relation(fields: [registrationId], references: [id])
+  provider       PaymentProvider @default(PAYSTACK)
+  reference      String          @unique
+  baseKobo       Int
+  feeKobo        Int             @default(0)
+  totalKobo      Int
+  paidKobo       Int?
+  currency       String          @default("NGN")
+  status         PaymentStatus   @default(PENDING)
+  channel        String?
+  paidAt         DateTime?
+  verifiedAt     DateTime?
+  rawPayload     Json?
+  recordedById   String?
+  note           String?         @db.Text
+  createdAt      DateTime        @default(now())
+
+  @@index([registrationId])
+  @@index([status, createdAt])
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Delivery
+// ---------------------------------------------------------------------------
+
+enum SessionStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  CANCELLED
+
+  @@schema("bootcamp")
+}
+
+model Session {
+  id            String        @id @default(uuid())
+  cohortId      String
+  cohort        Cohort        @relation(fields: [cohortId], references: [id])
+  trackId       String
+  track         Track         @relation(fields: [trackId], references: [id])
+  sequence      Int
+  title         String
+  description   String?       @db.Text
+  scheduledFor  DateTime
+  durationMins  Int           @default(90)
+  checkInCode   String?
+  codeExpiresAt DateTime?
+  status        SessionStatus @default(SCHEDULED)
+  attendance    Attendance[]
+
+  @@unique([trackId, sequence])
+  @@index([cohortId, scheduledFor])
+  @@schema("bootcamp")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  EXCUSED
+
+  @@schema("bootcamp")
+}
+
+enum AttendanceMethod {
+  CHECK_IN_CODE
+  FACILITATOR
+  ADMIN_OVERRIDE
+
+  @@schema("bootcamp")
+}
+
+model Attendance {
+  id             String           @id @default(uuid())
+  sessionId      String
+  session        Session          @relation(fields: [sessionId], references: [id])
+  registrationId String
+  registration   Registration     @relation(fields: [registrationId], references: [id])
+  status         AttendanceStatus
+  method         AttendanceMethod
+  markedById     String?
+  markedAt       DateTime         @default(now())
+  note           String?
+
+  @@unique([sessionId, registrationId])
+  @@index([registrationId])
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Outcome
+// ---------------------------------------------------------------------------
+
+model Certificate {
+  id               String       @id @default(uuid())
+  registrationId   String       @unique
+  registration     Registration @relation(fields: [registrationId], references: [id])
+  verifyCode       String       @unique
+  serial           String       @unique
+  sessionsAttended Int
+  sessionsTotal    Int
+  pdfUrl           String?
+  issuedAt         DateTime     @default(now())
+  revokedAt        DateTime?
+  revokeReason     String?
+
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Demand capture and archive
+// ---------------------------------------------------------------------------
+
+model WaitlistEntry {
+  id         String    @id @default(uuid())
+  cohortId   String?
+  cohort     Cohort?   @relation(fields: [cohortId], references: [id])
+  trackId    String?
+  track      Track?    @relation(fields: [trackId], references: [id])
+  trackName  String?
+  fullName   String
+  email      String
+  phone      String?
+  notifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([cohortId])
+  @@index([email])
+  @@schema("bootcamp")
+}
+
+model CohortMedia {
+  id        String  @id @default(uuid())
+  cohortId  String
+  cohort    Cohort  @relation(fields: [cohortId], references: [id])
+  url       String
+  caption   String?
+  sortOrder Int     @default(0)
+
+  @@schema("bootcamp")
+}
+
+model Testimonial {
+  id          String  @id @default(uuid())
+  cohortId    String
+  cohort      Cohort  @relation(fields: [cohortId], references: [id])
+  studentName String
+  trackName   String?
+  quote       String  @db.Text
+  photoUrl    String?
+  isPublished Boolean @default(false)
+
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// Audit — every offline payment, comp, refund, track transfer and certificate
+// revocation writes a row here. Non-optional.
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@schema("bootcamp")
+}
+
+// ---------------------------------------------------------------------------
+// The main platform's `public."User"` is deliberately NOT modelled here.
+//
+// It is read via raw SQL in lib/auth.ts to authenticate admins. Reads need no
+// migration, and keeping the table out of this schema means Prisma can never
+// generate DDL against palmtechniq-v2's tables. See the header comment.
+// ---------------------------------------------------------------------------

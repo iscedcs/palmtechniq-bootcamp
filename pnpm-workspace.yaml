@@ -1,0 +1,9 @@
+allowBuilds:
+  sharp: false
+  unrs-resolver: false
+  # Prisma's postinstall fetches the query engine binary. Without this the
+  # client generates but cannot connect.
+  "@prisma/engines": true
+  prisma: true
+  # Needed by tsx, which runs the Prisma seed.
+  esbuild: true

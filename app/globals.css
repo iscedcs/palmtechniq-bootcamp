@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   PalmTechnIQ design layer — ported from palmtechniq-v2/app/globals.css.
+
+   Two-tier token scheme, kept deliberately identical to the main platform so
+   components can be pasted between the two repos without edits:
+
+     1. Raw HSL triplets on :root  (--primary, --secondary, ...)
+        Consumed by v2-style arbitrary values: bg-[hsl(var(--primary))]
+     2. Tailwind v4 @theme colors   (--color-primary, ...) built from those
+        Consumed by named utilities: bg-primary, text-foreground, border-border
+
+   Brand hex references (brand sheet):
+     #00343d teal · #27ba55 green · #000000 black · #ffffff white
+     #84c8d4 blue · #e4d406 yellow · #800000 maroon
+--------------------------------------------------------------------------- */
+
+@layer base {
+  :root {
+    /* Background & foreground.
+       Canvas sits deeper than brand teal (#00343d) so the grid and glass
+       surfaces have somewhere to sit above it. Brand teal is --brand-teal. */
+    --background: 191 100% 8%;
+    --foreground: 0 0% 100%;
+
+    /* Card & popover — brand teal #00343d exactly. */
+    --card: 189 100% 12%;
+    --card-foreground: 0 0% 100%;
+    --popover: 189 100% 12%;
+    --popover-foreground: 0 0% 100%;
+
+    /* Primary — brand green #27ba55.
+       (v2 currently ships 152 65% 48%, a mint that drifts off-brand.) */
+    --primary: 139 65% 44%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary — highlight blue #84c8d4. */
+    --secondary: 189 48% 67%;
+    --secondary-foreground: 189 100% 12%;
+
+    /* Accent — highlight yellow #e4d406.
+       (v2 currently ships 84 61% 45%, an olive-green, not this yellow.) */
+    --accent: 56 95% 46%;
+    --accent-foreground: 0 0% 0%;
+
+    --muted: 189 40% 25%;
+    --muted-foreground: 189 25% 72%;
+
+    /* Destructive — highlight maroon #800000. */
+    --destructive: 0 100% 25%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 191 100% 15%;
+    --input: 191 100% 15%;
+    --ring: 139 65% 44%;
+
+    --radius: 0.75rem;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    /* Three ambient washes, same placement as the main site. */
+    background-image:
+      radial-gradient(
+        circle at 20% 80%,
+        hsl(var(--secondary) / 0.12) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        circle at 80% 20%,
+        hsl(var(--primary) / 0.12) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        circle at 40% 40%,
+        hsl(var(--accent) / 0.06) 0%,
+        transparent 50%
+      );
+    background-attachment: fixed;
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Literal brand hexes, for when a token indirection would obscure intent. */
+  --color-brand-teal: #00343d;
+  --color-brand-green: #27ba55;
+  --color-brand-black: #000000;
+  --color-brand-white: #ffffff;
+  --color-highlight-blue: #84c8d4;
+  --color-highlight-yellow: #e4d406;
+  --color-highlight-maroon: #800000;
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --animate-float: float 3s ease-in-out infinite;
+  --animate-pulse-smooth: pulse-smooth 2s ease-in-out infinite;
+  --animate-marquee: marquee 30s linear infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Component classes — same names as the main platform.
+--------------------------------------------------------------------------- */
+
+@utility glass-card {
+  backdrop-filter: blur(24px);
+  background-color: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 1rem;
+  box-shadow:
+    0 25px 50px -12px rgb(0 0 0 / 0.5);
+}
+
+/* The tiles. 50px lattice in highlight blue at 12% — the main site's texture.
+   Pair with `cyber-grid-fade` to stop it running under content edges. */
+@utility cyber-grid {
+  background-image:
+    linear-gradient(hsl(var(--secondary) / 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--secondary) / 0.12) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Radial fade so the lattice dissolves toward the edges rather than being
+   sliced off by the section boundary. Apply to the absolutely-positioned
+   grid layer, not the section itself. */
+@utility cyber-grid-fade {
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 100%);
+}
+
+@utility neon-border {
+  border: 2px solid transparent;
+  background-image:
+    linear-gradient(hsl(var(--card)), hsl(var(--card))),
+    linear-gradient(
+      to right,
+      hsl(var(--secondary)),
+      hsl(var(--primary)),
+      hsl(var(--accent))
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+@utility text-gradient {
+  background-image: linear-gradient(
+    to right,
+    hsl(var(--secondary)),
+    hsl(var(--primary)),
+    hsl(var(--accent))
+  );
+  background-clip: text;
+  color: transparent;
+}
+
+@utility hover-glow {
+  transition: all 0.3s ease;
+
+  &:hover {
+    box-shadow: 0 0 30px hsl(var(--secondary) / 0.35);
+    transform: translateY(-2px);
+  }
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulse-smooth {
+  0%,
+  100% {
+    box-shadow: 0 0 15px hsl(var(--secondary) / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 25px hsl(var(--secondary) / 0.7);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
